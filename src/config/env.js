@@ -52,8 +52,9 @@ const config = {
   },
 
   shopify: {
-    storeDomain: (process.env.SHOPIFY_STORE_DOMAIN || '').replace(/^https?:\/\//, '').replace(/\/+$/, ''),
-    adminAccessToken: process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || '',
+    shop: process.env.SHOPIFY_SHOP || '',
+    clientId: process.env.SHOPIFY_CLIENT_ID || '',
+    clientSecret: process.env.SHOPIFY_CLIENT_SECRET || '',
     apiVersion: process.env.SHOPIFY_API_VERSION || '2026-07',
     publicBaseUrl: (process.env.PUBLIC_BASE_URL || '').replace(/\/+$/, ''),
     carrierName: process.env.SHOPIFY_CARRIER_NAME || 'Helthjem Coverage'

@@ -62,24 +62,23 @@ export class HelthjemService {
           if (err.name === 'AbortError') {
             throw new HelthjemTimeoutError('Authentication request timed out');
           }
-          throw new HelthjemAuthError(`Network error during authentication: ${err.message}`);
+          throw new HelthjemAuthError('Network error during Helthjem authentication');
         } finally {
           clearTimeout(timeoutId);
         }
 
         if (!response.ok) {
           const status = response.status;
-          let errorText = '';
-          try {
-            errorText = await response.text();
-          } catch {
-            // Ignore text read error
-          }
           logger.error('Helthjem', `Authentication failed with HTTP ${status}`);
           throw new HelthjemAuthError(`Helthjem authentication failed with status ${status}`);
         }
 
-        const data = await response.json();
+        let data;
+        try {
+          data = await response.json();
+        } catch {
+          throw new HelthjemAuthError('Invalid Helthjem authentication response');
+        }
         if (!data || !data.token) {
           throw new HelthjemAuthError('Helthjem auth response missing access token');
         }
@@ -95,7 +94,7 @@ export class HelthjemService {
         const maxTtlSec = 12 * 3600; // Proactively refresh no later than 12 hours
         const safetyBufferSec = 300; // 5 minute buffer
 
-        const effectiveTtlSec = Math.max(60, Math.min(expiresInSec - safetyBufferSec, maxTtlSec));
+        const effectiveTtlSec = Math.max(0, Math.min(expiresInSec - safetyBufferSec, maxTtlSec));
         this.tokenExpiresAt = Date.now() + effectiveTtlSec * 1000;
 
         logger.info('Helthjem', `Authentication successful (token cached for ${effectiveTtlSec}s)`);
@@ -124,9 +123,6 @@ export class HelthjemService {
     }
     if (Array.isArray(data.errors) && data.errors.length > 0 && typeof data.errors[0]?.errorKey === 'string') {
       return data.errors[0].errorKey;
-    }
-    if (typeof data.message === 'string' && data.message.includes('no.carrier.support')) {
-      return 'no.carrier.support';
     }
 
     return null;
@@ -197,8 +193,8 @@ export class HelthjemService {
         logger.error('Helthjem', 'API timeout during address check');
         throw new HelthjemTimeoutError('Helthjem coverage check timed out');
       }
-      logger.error('Helthjem', `Network error during address check: ${err.message}`);
-      throw new HelthjemApiError(`Network error communicating with Helthjem: ${err.message}`, 502);
+      logger.error('Helthjem', 'Network error during address check');
+      throw new HelthjemApiError('Network error communicating with Helthjem', 502);
     } finally {
       clearTimeout(timeoutId);
     }
@@ -218,7 +214,12 @@ export class HelthjemService {
     }
 
     let responseData = null;
-    const responseText = await response.text();
+    let responseText;
+    try {
+      responseText = await response.text();
+    } catch {
+      throw new HelthjemApiError('Invalid Helthjem coverage response', 502);
+    }
     try {
       responseData = JSON.parse(responseText);
     } catch {
@@ -247,18 +248,12 @@ export class HelthjemService {
         };
       }
 
-      // 200 OK but productName is not HELTHJEM (e.g. unexpected product)
-      logger.info('Helthjem', `Response received but productName is not HELTHJEM: ${responseData?.productName || 'unknown'}`);
-      return {
-        covered: false,
-        reason: responseData?.productName ? `unsupported_product_${responseData.productName}` : 'no.carrier.support',
-        raw: responseData
-      };
+      throw new HelthjemApiError('Unexpected Helthjem coverage response', 502);
     }
 
     // Helthjem often returns HTTP 400 with { "errorKey": "no.carrier.support" } for unsupported addresses
     const errorKey = this.extractErrorKey(responseData);
-    if (errorKey === 'no.carrier.support') {
+    if (response.status < 500 && errorKey === 'no.carrier.support') {
       logger.info('Helthjem', 'No coverage (no.carrier.support in error response)');
       return {
         covered: false,
@@ -269,15 +264,12 @@ export class HelthjemService {
 
     // Any other error (5xx, unknown 4xx, unexpected error)
     logger.error('Helthjem', `API error HTTP ${response.status}`, {
-      status: response.status,
-      errorKey,
-      body: responseData || responseText.slice(0, 150)
+      status: response.status
     });
 
     throw new HelthjemApiError(
       `Helthjem API returned HTTP ${response.status}`,
-      response.status >= 500 ? 502 : response.status,
-      responseData
+      502
     );
   }
 }

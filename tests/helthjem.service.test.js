@@ -235,6 +235,20 @@ describe('Helthjem Service Client', () => {
         (err) => err instanceof HelthjemApiError && err.statusCode === 502
       );
     });
+
+    it('does not treat an unexpected 200 response as no coverage', async () => {
+      globalThis.fetch = async (url) => url.includes('/token')
+        ? new Response(JSON.stringify({ token: 'mock-token', expires_in: 86400 }))
+        : new Response(JSON.stringify({ productName: 'OTHER' }));
+      await assert.rejects(service.checkAddressCoverage({ address: 'A', zipCode: '0468', postalName: 'Oslo' }), HelthjemApiError);
+    });
+
+    it('does not treat a 500 carrying no.carrier.support as no coverage', async () => {
+      globalThis.fetch = async (url) => url.includes('/token')
+        ? new Response(JSON.stringify({ token: 'mock-token', expires_in: 86400 }))
+        : new Response(JSON.stringify({ errorKey: 'no.carrier.support' }), { status: 500 });
+      await assert.rejects(service.checkAddressCoverage({ address: 'A', zipCode: '0468', postalName: 'Oslo' }), HelthjemApiError);
+    });
   });
 
   describe('ErrorKey Detection', () => {
@@ -242,7 +256,7 @@ describe('Helthjem Service Client', () => {
       assert.equal(service.extractErrorKey({ errorKey: 'no.carrier.support' }), 'no.carrier.support');
       assert.equal(service.extractErrorKey({ error: { errorKey: 'no.carrier.support' } }), 'no.carrier.support');
       assert.equal(service.extractErrorKey({ errors: [{ errorKey: 'no.carrier.support' }] }), 'no.carrier.support');
-      assert.equal(service.extractErrorKey({ message: 'Error: no.carrier.support found' }), 'no.carrier.support');
+      assert.equal(service.extractErrorKey({ message: 'Error: no.carrier.support found' }), null);
       assert.equal(service.extractErrorKey({ errorKey: 'other.error' }), 'other.error');
       assert.equal(service.extractErrorKey(null), null);
       assert.equal(service.extractErrorKey({}), null);

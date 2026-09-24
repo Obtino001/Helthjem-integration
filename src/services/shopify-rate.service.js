@@ -70,6 +70,10 @@ export class ShopifyRateService {
       };
     }
 
+    if (coverageResult.reason !== 'no.carrier.support') {
+      throw new Error('Unexpected Helthjem coverage result');
+    }
+
     // No coverage confirmed
     logger.info('ShopifyRate', `No Helthjem coverage (${coverageResult.reason || 'unsupported'}), returning empty rates`);
     return { rates: [] };

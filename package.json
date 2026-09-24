@@ -10,7 +10,8 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "test": "node --test tests/**/*.test.js",
+    "test": "node --test --test-isolation=none tests/*.test.js",
+    "shopify:test-auth": "node scripts/test-shopify-auth.js",
     "shopify:list-carriers": "node scripts/list-carriers.js",
     "shopify:register-carrier": "node scripts/register-carrier.js"
   },

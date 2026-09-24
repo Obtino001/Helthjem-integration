@@ -70,14 +70,14 @@ router.post('/coverage', verifyTestEndpointAccess, async (req, res) => {
 
     return res.status(200).json({
       covered: false,
-      reason: result.reason || 'no.carrier.support'
+      reason: result.reason
     });
   } catch (error) {
     logger.error('HelthjemTest', 'Coverage check failed with error', error);
     const statusCode = error.statusCode || 502;
     return res.status(statusCode).json({
       error: 'Failed to verify Helthjem coverage',
-      message: error.message
+      message: 'Helthjem request failed'
     });
   }
 });

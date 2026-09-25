@@ -19,7 +19,7 @@ const UPDATE_MUTATION = `mutation CarrierServiceUpdate($input: DeliveryCarrierSe
 const input = {
   id: "gid://shopify/DeliveryCarrierService/108187615543",
   name: "Helthjem Coverage",
-  callbackUrl: "https://wholesale-critical-freedom-taken.trycloudflare.com/api/shopify/rates",
+  callbackUrl: "https://helthjem-integration.onrender.com/api/shopify/rates",
   active: true
 };
 

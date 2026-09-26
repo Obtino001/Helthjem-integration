@@ -251,8 +251,38 @@ export class HelthjemService {
       throw new HelthjemApiError('Unexpected Helthjem coverage response', 502);
     }
 
-    // Helthjem often returns HTTP 400 with { "errorKey": "no.carrier.support" } for unsupported addresses
     const errorKey = this.extractErrorKey(responseData);
+
+    if (response.status === 400) {
+      let messageStr;
+      if (responseData && typeof responseData === 'object') {
+        if (typeof responseData.message === 'string') messageStr = responseData.message;
+        else if (typeof responseData.error === 'string') messageStr = responseData.error;
+        else if (responseData.error && typeof responseData.error.message === 'string') messageStr = responseData.error.message;
+      }
+
+      const diagnostic = {
+        status: 400,
+        zipCode: requestBody.zipCode,
+        weight: requestBody.weight,
+        transportSolutionId: requestBody.transportSolutionId
+      };
+      if (errorKey) diagnostic.errorKey = errorKey;
+      if (messageStr) diagnostic.message = messageStr;
+
+      logger.info('Helthjem', 'Coverage request rejected', diagnostic);
+
+      if (errorKey === 'no.carrier.support') {
+        return {
+          covered: false,
+          reason: 'no.carrier.support',
+          raw: responseData
+        };
+      }
+      
+      throw new HelthjemApiError('Helthjem API returned HTTP 400', 502);
+    }
+
     if (response.status < 500 && errorKey === 'no.carrier.support') {
       logger.info('Helthjem', 'No coverage (no.carrier.support in error response)');
       return {

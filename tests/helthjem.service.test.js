@@ -2,6 +2,7 @@ import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { HelthjemService } from '../src/services/helthjem.service.js';
 import { HelthjemAuthError, HelthjemTimeoutError, HelthjemApiError } from '../src/utils/errors.js';
+import logger from '../src/utils/logger.js';
 
 describe('Helthjem Service Client', () => {
   let originalFetch;
@@ -260,6 +261,95 @@ describe('Helthjem Service Client', () => {
       assert.equal(service.extractErrorKey({ errorKey: 'other.error' }), 'other.error');
       assert.equal(service.extractErrorKey(null), null);
       assert.equal(service.extractErrorKey({}), null);
+    });
+  });
+
+  describe('HTTP 400 Diagnostics and Sanitized Logging', () => {
+    let originalLoggerInfo;
+    let loggedInfos = [];
+
+    beforeEach(() => {
+      originalLoggerInfo = logger.info;
+      logger.info = (namespace, message, data) => {
+        loggedInfos.push({ namespace, message, data });
+      };
+      loggedInfos = [];
+    });
+
+    afterEach(() => {
+      logger.info = originalLoggerInfo;
+    });
+
+    it('logs sanitized diagnostic on HTTP 400 with no.carrier.support and treats as normal no coverage', async () => {
+      globalThis.fetch = async (url) => {
+        if (url.includes('/auth/oauth2/v1/token')) {
+          return new Response(JSON.stringify({ token: 'tok-123', expires_in: 86400 }));
+        }
+        return new Response(JSON.stringify({
+          errorKey: 'no.carrier.support',
+          message: 'No coverage available'
+        }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+      };
+
+      const result = await service.checkAddressCoverage({
+        address: 'Secret Address 1',
+        customerName: 'Top Secret Name',
+        zipCode: '1234',
+        weight: 5050
+      });
+
+      assert.equal(result.covered, false);
+      assert.equal(result.reason, 'no.carrier.support');
+
+      const log = loggedInfos.find(l => l.message === 'Coverage request rejected');
+      assert.ok(log, 'Should log Coverage request rejected');
+      assert.equal(log.data.status, 400);
+      assert.equal(log.data.errorKey, 'no.carrier.support');
+      assert.equal(log.data.message, 'No coverage available');
+      assert.equal(log.data.zipCode, '1234');
+      assert.equal(log.data.weight, 5050);
+      assert.equal(log.data.transportSolutionId, 2);
+      
+      // Ensure credentials and personal data are NOT logged
+      assert.equal(log.data.address, undefined);
+      assert.equal(log.data.customerName, undefined);
+      assert.equal(log.data.token, undefined);
+      assert.equal(log.data.clientId, undefined);
+    });
+
+    it('logs sanitized diagnostic on HTTP 400 with another validation error and throws technical error', async () => {
+      globalThis.fetch = async (url) => {
+        if (url.includes('/auth/oauth2/v1/token')) {
+          return new Response(JSON.stringify({ token: 'tok-123', expires_in: 86400 }));
+        }
+        return new Response(JSON.stringify({
+          error: {
+            errorKey: 'invalid.zipcode',
+            message: 'Invalid zip code format'
+          }
+        }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+      };
+
+      await assert.rejects(
+        async () => service.checkAddressCoverage({
+          address: 'Secret Address 1',
+          customerName: 'Top Secret Name',
+          zipCode: 'ABCD',
+          weight: 5050
+        }),
+        (err) => err instanceof HelthjemApiError && err.statusCode === 502
+      );
+
+      const log = loggedInfos.find(l => l.message === 'Coverage request rejected');
+      assert.ok(log, 'Should log Coverage request rejected');
+      assert.equal(log.data.status, 400);
+      assert.equal(log.data.errorKey, 'invalid.zipcode');
+      assert.equal(log.data.message, 'Invalid zip code format');
+      assert.equal(log.data.zipCode, 'ABCD');
+      
+      // Ensure personal info is sanitized
+      assert.equal(log.data.address, undefined);
+      assert.equal(log.data.customerName, undefined);
     });
   });
 });
